@@ -1,5 +1,5 @@
 defmodule IslandsEngine.IslandTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
   alias IslandsEngine.{Coordinate, Island}
   doctest Island
 
