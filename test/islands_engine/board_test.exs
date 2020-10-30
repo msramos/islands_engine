@@ -7,8 +7,10 @@ defmodule IslandsEngine.BoardTest do
 
   describe "new/0" do
     test "creates a new empty board" do
-      expected = {:ok, %{}}
+      expected = %{}
+
       result = @sut.new()
+
       assert result == expected
     end
   end

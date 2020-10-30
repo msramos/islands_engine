@@ -4,9 +4,7 @@ defmodule IslandsEngine.Board do
   """
   alias IslandsEngine.{Coordinate, Island}
 
-  def new do
-    {:ok, %{}}
-  end
+  def new, do: %{}
 
   @doc """
   Guesses a coordinate in a board and check it was succesful and if the player
