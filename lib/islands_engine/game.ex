@@ -5,8 +5,21 @@ defmodule IslandsEngine.Game do
 
   @players [:player1, :player2]
 
+  @timeout 15 * 1000
+
+  @spec via_tuple(any) :: {:via, Registry, {Registry.Game, any}}
   def via_tuple(name) do
     {:via, Registry, {Registry.Game, name}}
+  end
+
+  def child_spec(_name) do
+    %{
+      id: __MODULE__,
+      restart: :transient,
+      shutdown: 5000,
+      start: {__MODULE__, :start_link, []},
+      type: :worker
+    }
   end
 
   def start_link(name) when is_binary(name) do
@@ -14,12 +27,8 @@ defmodule IslandsEngine.Game do
   end
 
   def init(name) do
-    player1 = %{name: name, board: Board.new(), guesses: Guesses.new()}
-    player2 = %{name: nil, board: Board.new(), guesses: Guesses.new()}
-
-    state = %{player1: player1, player2: player2, rules: Rules.new()}
-
-    {:ok, state}
+    send(self(), {:set_state, name})
+    {:ok, fresh_state(name)}
   end
 
   def add_player(game, name) when is_binary(name) do
@@ -38,6 +47,32 @@ defmodule IslandsEngine.Game do
     GenServer.call(game, {:guess_coordinate, player, row, col})
   end
 
+  def terminate({:shutdown, :timeout}, state) do
+    :ets.delete(:game_state, state.player1.name)
+    :ok
+  end
+
+  def terminate(_reason, _state), do: :ok
+
+  def handle_info(:timeout, state) do
+    {:stop, {:shutdown, :timeout}, state}
+  end
+
+  def handle_info({:set_state, name}, _state) do
+    state =
+      case :ets.lookup(:game_state, name) do
+        [] ->
+          fresh_state(name)
+
+        [{_key, state}] ->
+          state
+      end
+
+    :ets.insert(:game_state, {name, state})
+
+    {:noreply, state, @timeout}
+  end
+
   def handle_call({:add_player, name}, _from, state) do
     case Rules.check(state.rules, :add_player) do
       {:ok, rules} ->
@@ -47,7 +82,7 @@ defmodule IslandsEngine.Game do
         |> reply_success(:ok)
 
       :error ->
-        {:reply, :error, state}
+        {:reply, :error, state, @timeout}
     end
   end
 
@@ -64,7 +99,7 @@ defmodule IslandsEngine.Game do
       |> reply_success(:ok)
     else
       error ->
-        {:reply, error, state}
+        {:reply, error, state, @timeout}
     end
   end
 
@@ -81,7 +116,7 @@ defmodule IslandsEngine.Game do
         {:reply, {:error, :not_all_islands_positioned}, state}
 
       error ->
-        {:reply, error, state}
+        {:reply, error, state, @timeout}
     end
   end
 
@@ -101,7 +136,7 @@ defmodule IslandsEngine.Game do
       |> reply_success({hit_or_miss, forested_island, win_status})
     else
       error ->
-        {:reply, error, state}
+        {:reply, error, state, @timeout}
     end
   end
 
@@ -131,6 +166,14 @@ defmodule IslandsEngine.Game do
   defp opponent(:player2), do: :player1
 
   defp reply_success(state, reply) do
-    {:reply, reply, state}
+    :ets.insert(:game_state, {state.player1.name, state})
+    {:reply, reply, state, @timeout}
+  end
+
+  defp fresh_state(name) do
+    player1 = %{name: name, board: Board.new(), guesses: Guesses.new()}
+    player2 = %{name: nil, board: Board.new(), guesses: Guesses.new()}
+
+    %{player1: player1, player2: player2, rules: Rules.new()}
   end
 end
