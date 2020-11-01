@@ -12,12 +12,12 @@ defmodule IslandsEngine.Game do
     {:via, Registry, {Registry.Game, name}}
   end
 
-  def child_spec(_name) do
+  def child_spec(name) do
     %{
       id: __MODULE__,
       restart: :transient,
       shutdown: 5000,
-      start: {__MODULE__, :start_link, []},
+      start: {__MODULE__, :start_link, [name]},
       type: :worker
     }
   end
