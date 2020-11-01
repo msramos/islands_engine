@@ -1,12 +1,18 @@
 defmodule IslandsEngine.Game do
+  @moduledoc """
+  Game process implementation
+  """
   use GenServer
 
-  alias IslandsEngine.{Board, Coordinate, Guesses, Island, Rules}
+  alias IslandsEngine.{Board, Coordinate, Storage, Guesses, Island, Rules}
 
   @players [:player1, :player2]
 
   @timeout 15 * 1000
 
+  @doc """
+  Creates the "via" tuple to be used by Registry for process name registration
+  """
   @spec via_tuple(any) :: {:via, Registry, {Registry.Game, any}}
   def via_tuple(name) do
     {:via, Registry, {Registry.Game, name}}
@@ -26,52 +32,76 @@ defmodule IslandsEngine.Game do
     GenServer.start_link(__MODULE__, name, name: via_tuple(name))
   end
 
+  @impl true
   def init(name) do
     send(self(), {:set_state, name})
     {:ok, fresh_state(name)}
   end
 
+  @doc """
+  Adds the second player to the game
+  """
   def add_player(game, name) when is_binary(name) do
     GenServer.call(game, {:add_player, name})
   end
 
+  @doc """
+  Position a player's island.
+
+  Until the islands are set, players can position islands as many times as they
+  want.
+  """
   def position_island(game, player, key, row, col) when player in @players do
     GenServer.call(game, {:position_island, player, key, row, col})
   end
 
+  @doc """
+  Mark the players islands as set. After calling this function the game will be
+  started and the player1 can start guessing.
+  """
   def set_islands(game, player) when player in @players do
     GenServer.call(game, {:set_islands, player})
   end
 
+  @doc """
+  Guesses a coordinate from the opponent's board.
+  """
   def guess_coordinate(game, player, row, col) when player in @players do
     GenServer.call(game, {:guess_coordinate, player, row, col})
   end
 
+  @impl true
+  def terminate(reason, state)
+
   def terminate({:shutdown, :timeout}, state) do
-    :ets.delete(:game_state, state.player1.name)
+    Storage.delete(state.player1.name)
     :ok
   end
 
   def terminate(_reason, _state), do: :ok
 
+  @impl true
   def handle_info(:timeout, state) do
     {:stop, {:shutdown, :timeout}, state}
   end
 
   def handle_info({:set_state, name}, _state) do
     state =
-      case :ets.lookup(:game_state, name) do
-        [] ->
+      case Storage.fetch(name) do
+        {:error, :not_found} ->
           fresh_state(name)
 
-        [{_key, state}] ->
+        {:ok, state} ->
           state
       end
 
-    :ets.insert(:game_state, {name, state})
+    Storage.store(name, state)
 
     {:noreply, state, @timeout}
   end
+
+  @impl true
+  def handle_call(event, caller_pid, current_state)
 
   def handle_call({:add_player, name}, _from, state) do
     case Rules.check(state.rules, :add_player) do
@@ -162,11 +192,12 @@ defmodule IslandsEngine.Game do
     Map.get(state, player).board
   end
 
+  defp opponent(player)
   defp opponent(:player1), do: :player2
   defp opponent(:player2), do: :player1
 
   defp reply_success(state, reply) do
-    :ets.insert(:game_state, {state.player1.name, state})
+    Storage.store(state.player1.name, state)
     {:reply, reply, state, @timeout}
   end
 
